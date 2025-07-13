@@ -1,0 +1,23 @@
+version: '3.8'
+
+services:
+  companies-house-mcp:
+    build: .
+    container_name: companies-house-mcp
+    environment:
+      - COMPANIES_HOUSE_API_KEY=${COMPANIES_HOUSE_API_KEY}
+      - COMPANIES_HOUSE_BASE_URL=https://api.company-information.service.gov.uk
+      - NODE_ENV=production
+    volumes:
+      # Mount logs directory if needed
+      - ./logs:/app/logs
+    restart: unless-stopped
+    stdin_open: true
+    tty: true
+    # For MCP stdio communication
+    networks:
+      - mcp-network
+
+networks:
+  mcp-network:
+    driver: bridge
