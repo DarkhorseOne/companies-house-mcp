@@ -6,17 +6,23 @@
   "scripts": {
     "build": "tsc",
     "start": "node dist/index.js",
+    "start:http": "node dist/http-index.js",
     "dev": "nodemon --exec ts-node src/index.ts",
-    "type-check": "tsc --noEmit"
+    "dev:http": "nodemon --exec ts-node src/http-index.ts",
+    "type-check": "tsc --noEmit",
+    "bridge": "node simple-http-bridge.js"
   },
   "keywords": [],
   "author": "",
   "license": "ISC",
   "type": "commonjs",
   "dependencies": {
+    "@fastify/cors": "^11.0.1",
+    "@fastify/helmet": "^13.0.1",
     "@modelcontextprotocol/sdk": "^1.15.1",
     "axios": "^1.10.0",
-    "dotenv": "^17.2.0"
+    "dotenv": "^17.2.0",
+    "fastify": "^5.4.0"
   },
   "devDependencies": {
     "@types/node": "^24.0.13",

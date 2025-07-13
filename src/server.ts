@@ -179,6 +179,6 @@ export class CompaniesHouseMCPServer {
   async run(): Promise<void> {
     const transport = new StdioServerTransport();
     await this.server.connect(transport);
-    console.error('Companies House MCP server running on stdio');
+    // Server is now running silently for MCP stdio communication
   }
 }

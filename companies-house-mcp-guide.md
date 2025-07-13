@@ -829,7 +829,613 @@ HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
 CMD ["node", "dist/index.js"]
 ```
 
-## Step 14: Deployment
+## Step 15: Remote Server Deployment
+
+### Method 1: HTTP Bridge (Recommended)
+
+Create an HTTP wrapper for your MCP server that can be deployed remotely.
+
+#### Create HTTP Server Wrapper
+
+Create `src/http-server.ts`:
+
+```typescript
+import express from 'express';
+import { Server } from '@modelcontextprotocol/sdk/server/index.js';
+import { CompaniesHouseService } from './services/companies-house';
+import {
+  CallToolRequestSchema,
+  ErrorCode,
+  ListToolsRequestSchema,
+  McpError,
+} from '@modelcontextprotocol/sdk/types.js';
+
+export class CompaniesHouseHTTPServer {
+  private app: express.Application;
+  private companiesHouseService: CompaniesHouseService;
+  private mcpServer: Server;
+
+  constructor(apiKey: string) {
+    this.app = express();
+    this.companiesHouseService = new CompaniesHouseService(apiKey);
+    this.setupMCPServer();
+    this.setupRoutes();
+  }
+
+  private setupMCPServer(): void {
+    this.mcpServer = new Server(
+      {
+        name: 'companies-house-mcp',
+        version: '1.0.0',
+      },
+      {
+        capabilities: {
+          tools: {},
+        },
+      }
+    );
+
+    // Copy the tool handlers from your original server.ts
+    this.mcpServer.setRequestHandler(ListToolsRequestSchema, async () => {
+      return {
+        tools: [
+          {
+            name: 'search_companies',
+            description: 'Search for UK companies by name or keyword',
+            inputSchema: {
+              type: 'object',
+              properties: {
+                query: {
+                  type: 'string',
+                  description: 'Search query for company name or keyword',
+                },
+                items_per_page: {
+                  type: 'number',
+                  description: 'Number of results to return (default: 20)',
+                  default: 20,
+                },
+              },
+              required: ['query'],
+            },
+          },
+          {
+            name: 'get_company_profile',
+            description: 'Get detailed company profile information',
+            inputSchema: {
+              type: 'object',
+              properties: {
+                company_number: {
+                  type: 'string',
+                  description: 'Company number (e.g., 12345678)',
+                },
+              },
+              required: ['company_number'],
+            },
+          },
+          {
+            name: 'get_company_officers',
+            description: 'Get list of company officers',
+            inputSchema: {
+              type: 'object',
+              properties: {
+                company_number: {
+                  type: 'string',
+                  description: 'Company number (e.g., 12345678)',
+                },
+              },
+              required: ['company_number'],
+            },
+          },
+          {
+            name: 'get_company_filings',
+            description: 'Get company filing history',
+            inputSchema: {
+              type: 'object',
+              properties: {
+                company_number: {
+                  type: 'string',
+                  description: 'Company number (e.g., 12345678)',
+                },
+                items_per_page: {
+                  type: 'number',
+                  description: 'Number of filings to return (default: 25)',
+                  default: 25,
+                },
+              },
+              required: ['company_number'],
+            },
+          },
+        ],
+      };
+    });
+
+    this.mcpServer.setRequestHandler(CallToolRequestSchema, async (request) => {
+      const { name, arguments: args } = request.params;
+
+      try {
+        switch (name) {
+          case 'search_companies': {
+            const { query, items_per_page = 20 } = args as {
+              query: string;
+              items_per_page?: number;
+            };
+            const result = await this.companiesHouseService.searchCompanies(query, items_per_page);
+            return {
+              content: [
+                {
+                  type: 'text',
+                  text: JSON.stringify(result, null, 2),
+                },
+              ],
+            };
+          }
+
+          case 'get_company_profile': {
+            const { company_number } = args as { company_number: string };
+            const result = await this.companiesHouseService.getCompanyProfile(company_number);
+            return {
+              content: [
+                {
+                  type: 'text',
+                  text: JSON.stringify(result, null, 2),
+                },
+              ],
+            };
+          }
+
+          case 'get_company_officers': {
+            const { company_number } = args as { company_number: string };
+            const result = await this.companiesHouseService.getCompanyOfficers(company_number);
+            return {
+              content: [
+                {
+                  type: 'text',
+                  text: JSON.stringify(result, null, 2),
+                },
+              ],
+            };
+          }
+
+          case 'get_company_filings': {
+            const { company_number, items_per_page = 25 } = args as {
+              company_number: string;
+              items_per_page?: number;
+            };
+            const result = await this.companiesHouseService.getCompanyFilings(company_number, items_per_page);
+            return {
+              content: [
+                {
+                  type: 'text',
+                  text: JSON.stringify(result, null, 2),
+                },
+              ],
+            };
+          }
+
+          default:
+            throw new McpError(ErrorCode.MethodNotFound, `Unknown tool: ${name}`);
+        }
+      } catch (error) {
+        throw new McpError(ErrorCode.InternalError, `Tool execution failed: ${error}`);
+      }
+    });
+  }
+
+  private setupRoutes(): void {
+    this.app.use(express.json());
+
+    // Health check endpoint
+    this.app.get('/health', (req, res) => {
+      res.json({ status: 'healthy', timestamp: new Date().toISOString() });
+    });
+
+    // List available tools
+    this.app.get('/tools', async (req, res) => {
+      try {
+        const toolsResponse = await this.mcpServer.request(
+          { method: 'tools/list', params: {} },
+          ListToolsRequestSchema
+        );
+        res.json(toolsResponse);
+      } catch (error) {
+        res.status(500).json({ error: error.message });
+      }
+    });
+
+    // Execute tool
+    this.app.post('/tools/:toolName', async (req, res) => {
+      try {
+        const { toolName } = req.params;
+        const toolArgs = req.body;
+
+        const response = await this.mcpServer.request(
+          {
+            method: 'tools/call',
+            params: {
+              name: toolName,
+              arguments: toolArgs,
+            },
+          },
+          CallToolRequestSchema
+        );
+
+        res.json(response);
+      } catch (error) {
+        res.status(500).json({ error: error.message });
+      }
+    });
+
+    // Direct API endpoints for easier access
+    this.app.get('/api/search/:query', async (req, res) => {
+      try {
+        const { query } = req.params;
+        const { items_per_page = 20 } = req.query;
+        const result = await this.companiesHouseService.searchCompanies(
+          query,
+          Number(items_per_page)
+        );
+        res.json(result);
+      } catch (error) {
+        res.status(500).json({ error: error.message });
+      }
+    });
+
+    this.app.get('/api/company/:companyNumber', async (req, res) => {
+      try {
+        const { companyNumber } = req.params;
+        const result = await this.companiesHouseService.getCompanyProfile(companyNumber);
+        res.json(result);
+      } catch (error) {
+        res.status(500).json({ error: error.message });
+      }
+    });
+
+    this.app.get('/api/company/:companyNumber/officers', async (req, res) => {
+      try {
+        const { companyNumber } = req.params;
+        const result = await this.companiesHouseService.getCompanyOfficers(companyNumber);
+        res.json(result);
+      } catch (error) {
+        res.status(500).json({ error: error.message });
+      }
+    });
+
+    this.app.get('/api/company/:companyNumber/filings', async (req, res) => {
+      try {
+        const { companyNumber } = req.params;
+        const { items_per_page = 25 } = req.query;
+        const result = await this.companiesHouseService.getCompanyFilings(
+          companyNumber,
+          Number(items_per_page)
+        );
+        res.json(result);
+      } catch (error) {
+        res.status(500).json({ error: error.message });
+      }
+    });
+  }
+
+  public start(port: number = 3000): void {
+    this.app.listen(port, () => {
+      console.log(`Companies House MCP HTTP Server running on port ${port}`);
+      console.log(`Health check: http://localhost:${port}/health`);
+      console.log(`Tools list: http://localhost:${port}/tools`);
+    });
+  }
+}
+```
+
+#### Create HTTP Server Entry Point
+
+Create `src/http-index.ts`:
+
+```typescript
+import dotenv from 'dotenv';
+import { CompaniesHouseHTTPServer } from './http-server';
+
+dotenv.config();
+
+async function main() {
+  const apiKey = process.env.COMPANIES_HOUSE_API_KEY;
+  const port = Number(process.env.PORT) || 3000;
+  
+  if (!apiKey) {
+    console.error('COMPANIES_HOUSE_API_KEY environment variable is required');
+    process.exit(1);
+  }
+
+  const server = new CompaniesHouseHTTPServer(apiKey);
+  server.start(port);
+}
+
+main().catch((error) => {
+  console.error('HTTP Server failed to start:', error);
+  process.exit(1);
+});
+```
+
+#### Install Express Dependencies
+
+```bash
+npm install express cors helmet
+npm install -D @types/express @types/cors
+```
+
+#### Update package.json
+
+Add new scripts:
+
+```json
+{
+  "scripts": {
+    "build": "tsc",
+    "start": "node dist/index.js",
+    "start:http": "node dist/http-index.js",
+    "dev": "nodemon --exec ts-node src/index.ts",
+    "dev:http": "nodemon --exec ts-node src/http-index.ts"
+  }
+}
+```
+
+### Method 2: WebSocket Bridge
+
+Create `src/websocket-server.ts`:
+
+```typescript
+import WebSocket from 'ws';
+import { CompaniesHouseMCPServer } from './server';
+
+export class CompaniesHouseWebSocketServer {
+  private wss: WebSocket.Server;
+  private mcpServer: CompaniesHouseMCPServer;
+
+  constructor(apiKey: string, port: number = 8080) {
+    this.mcpServer = new CompaniesHouseMCPServer(apiKey);
+    this.wss = new WebSocket.Server({ port });
+    this.setupWebSocketHandlers();
+  }
+
+  private setupWebSocketHandlers(): void {
+    this.wss.on('connection', (ws) => {
+      console.log('Client connected');
+
+      ws.on('message', async (message) => {
+        try {
+          const request = JSON.parse(message.toString());
+          // Handle MCP protocol over WebSocket
+          // This would require adapting the stdio transport to WebSocket
+          // Implementation depends on your specific needs
+        } catch (error) {
+          ws.send(JSON.stringify({ error: error.message }));
+        }
+      });
+
+      ws.on('close', () => {
+        console.log('Client disconnected');
+      });
+    });
+  }
+
+  public start(): void {
+    console.log(`WebSocket server running on port ${this.wss.options.port}`);
+  }
+}
+```
+
+### Method 3: SSH Tunneling (Simple Solution)
+
+For the original stdio-based MCP server, you can use SSH tunneling:
+
+#### On your remote server:
+
+1. **Deploy your MCP server:**
+   ```bash
+   # Upload your built MCP server to remote server
+   scp -r dist/ user@remote-server:/path/to/companies-house-mcp/
+   ```
+
+2. **Install dependencies on remote server:**
+   ```bash
+   ssh user@remote-server
+   cd /path/to/companies-house-mcp
+   npm install --production
+   ```
+
+#### On your local machine (Claude Desktop config):
+
+```json
+{
+  "mcpServers": {
+    "companies-house": {
+      "command": "ssh",
+      "args": [
+        "user@remote-server",
+        "cd /path/to/companies-house-mcp && COMPANIES_HOUSE_API_KEY=your_key node dist/index.js"
+      ]
+    }
+  }
+}
+```
+
+### Method 4: Docker on Remote Server
+
+#### Build and push Docker image:
+
+```bash
+# Build the image
+docker build -t companies-house-mcp .
+
+# Tag for your registry
+docker tag companies-house-mcp your-registry/companies-house-mcp:latest
+
+# Push to registry
+docker push your-registry/companies-house-mcp:latest
+```
+
+#### Deploy on remote server:
+
+```bash
+# On remote server
+docker run -d \
+  --name companies-house-mcp \
+  --restart unless-stopped \
+  -e COMPANIES_HOUSE_API_KEY=your_key \
+  -p 3000:3000 \
+  your-registry/companies-house-mcp:latest
+```
+
+#### Update tsconfig.json for HTTP server:
+
+```json
+{
+  "compilerOptions": {
+    "target": "ES2020",
+    "module": "commonjs",
+    "lib": ["ES2020"],
+    "outDir": "./dist",
+    "rootDir": "./src",
+    "strict": true,
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "forceConsistentCasingInFileNames": true,
+    "resolveJsonModule": true
+  },
+  "include": ["src/**/*"],
+  "exclude": ["node_modules", "dist"]
+}
+```
+
+### Method 5: Cloud Deployment
+
+#### AWS Lambda (Serverless)
+
+Create `src/lambda.ts`:
+
+```typescript
+import { APIGatewayProxyHandler } from 'aws-lambda';
+import { CompaniesHouseService } from './services/companies-house';
+
+const companiesHouseService = new CompaniesHouseService(process.env.COMPANIES_HOUSE_API_KEY!);
+
+export const handler: APIGatewayProxyHandler = async (event) => {
+  try {
+    const { httpMethod, path, body } = event;
+    
+    if (httpMethod === 'GET' && path.startsWith('/search/')) {
+      const query = path.split('/search/')[1];
+      const result = await companiesHouseService.searchCompanies(decodeURIComponent(query));
+      return {
+        statusCode: 200,
+        body: JSON.stringify(result),
+        headers: {
+          'Content-Type': 'application/json',
+          'Access-Control-Allow-Origin': '*',
+        },
+      };
+    }
+
+    return {
+      statusCode: 404,
+      body: JSON.stringify({ error: 'Not found' }),
+    };
+  } catch (error) {
+    return {
+      statusCode: 500,
+      body: JSON.stringify({ error: error.message }),
+    };
+  }
+};
+```
+
+#### Railway/Heroku/DigitalOcean
+
+Create `Procfile`:
+
+```
+web: npm run start:http
+```
+
+Add to `package.json`:
+
+```json
+{
+  "engines": {
+    "node": "18.x"
+  }
+}
+```
+
+### Client Configuration for Remote HTTP Server
+
+For the HTTP server approach, update your Claude Desktop config to use a bridge script:
+
+Create `mcp-http-bridge.js`:
+
+```javascript
+const axios = require('axios');
+
+const SERVER_URL = 'http://your-remote-server:3000';
+
+async function main() {
+  process.stdin.on('data', async (data) => {
+    try {
+      const request = JSON.parse(data.toString());
+      
+      if (request.method === 'tools/list') {
+        const response = await axios.get(`${SERVER_URL}/tools`);
+        console.log(JSON.stringify(response.data));
+      } else if (request.method === 'tools/call') {
+        const { name, arguments: args } = request.params;
+        const response = await axios.post(`${SERVER_URL}/tools/${name}`, args);
+        console.log(JSON.stringify(response.data));
+      }
+    } catch (error) {
+      console.error(JSON.stringify({ error: error.message }));
+    }
+  });
+}
+
+main();
+```
+
+Then in Claude Desktop config:
+
+```json
+{
+  "mcpServers": {
+    "companies-house": {
+      "command": "node",
+      "args": ["path/to/mcp-http-bridge.js"]
+    }
+  }
+}
+```
+
+### Security Considerations
+
+1. **API Key Security:** Use environment variables or secure key management
+2. **HTTPS:** Always use HTTPS in production
+3. **Authentication:** Add API authentication for your HTTP endpoints
+4. **Rate Limiting:** Implement rate limiting to prevent abuse
+5. **CORS:** Configure CORS appropriately for your use case
+
+### Monitoring and Logging
+
+Add logging and monitoring to your remote server:
+
+```bash
+# Install PM2 for process management
+npm install -g pm2
+
+# Start with PM2
+pm2 start dist/http-index.js --name companies-house-mcp
+
+# Monitor
+pm2 monit
+
+# Logs
+pm2 logs companies-house-mcp
+```
 
 For production deployment:
 

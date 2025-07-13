@@ -87,14 +87,16 @@ docker-compose up
 
 ## MCP Client Configuration
 
-To use this server with an MCP client, add the following configuration:
+### Local Development (Stdio Transport)
+
+For local development or direct MCP client usage:
 
 ```json
 {
   "mcpServers": {
     "companies-house": {
       "command": "node",
-      "args": ["./dist/index.js"],
+      "args": ["/absolute/path/to/companies-house-mcp/dist/index.js"],
       "env": {
         "COMPANIES_HOUSE_API_KEY": "your_api_key_here"
       }
@@ -102,6 +104,33 @@ To use this server with an MCP client, add the following configuration:
   }
 }
 ```
+
+### Cloud Deployment (HTTP Bridge)
+
+For cloud deployment where the HTTP server runs remotely:
+
+1. **Start HTTP server on cloud server:**
+```bash
+npm run start:http
+```
+
+2. **Configure client to use HTTP bridge:**
+```json
+{
+  "mcpServers": {
+    "companies-house-http": {
+      "command": "node",
+      "args": ["/absolute/path/to/companies-house-mcp/simple-http-bridge.js"],
+      "env": {
+        "COMPANIES_HOUSE_API_KEY": "your_api_key_here",
+        "MCP_HTTP_SERVER_URL": "http://your-server:3000"
+      }
+    }
+  }
+}
+```
+
+> **Note:** For cloud deployment, see [README-HTTP.md](./README-HTTP.md) for detailed HTTP bridge configuration.
 
 ## Available Tools
 
@@ -179,26 +208,38 @@ Get company filing history.
 
 ### Scripts
 
+**Core MCP Server (Stdio):**
 - `npm run dev` - Start development server with hot reload
 - `npm run build` - Compile TypeScript to JavaScript
-- `npm run start` - Start production server
+- `npm run start` - Start production stdio server
 - `npm run type-check` - Run TypeScript type checking
+
+**HTTP Bridge (Cloud Deployment):**
+- `npm run start:http` - Start HTTP server for cloud deployment
+- `npm run dev:http` - Start HTTP server in development mode
+- `npm run bridge` - Start HTTP bridge client
 
 ### Project Structure
 
 ```
 companies-house-mcp/
 ├── src/
-│   ├── index.ts              # Entry point
-│   ├── server.ts             # MCP server implementation
+│   ├── index.ts              # Stdio MCP server entry point
+│   ├── server.ts             # Core MCP server implementation
+│   ├── http-index.ts         # HTTP server entry point
+│   ├── http-server.ts        # HTTP server implementation
 │   ├── types.ts              # TypeScript type definitions
 │   └── services/
 │       └── companies-house.ts # Companies House API client
+├── simple-http-bridge.js     # HTTP bridge client
+├── dist/                     # Compiled JavaScript files
 ├── .env                      # Environment variables
 ├── package.json              # Dependencies and scripts
 ├── tsconfig.json             # TypeScript configuration
 ├── Dockerfile                # Docker configuration
-└── docker-compose.yml        # Docker Compose configuration
+├── docker-compose.yml        # Docker Compose configuration
+├── README.md                 # Main documentation
+└── README-HTTP.md            # HTTP bridge documentation
 ```
 
 ## API Rate Limits

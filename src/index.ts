@@ -1,13 +1,17 @@
 import dotenv from 'dotenv';
 import { CompaniesHouseMCPServer } from './server';
 
+// Suppress dotenv console output completely
+const originalConsoleLog = console.log;
+console.log = () => {}; // Temporarily disable console.log
 dotenv.config();
+console.log = originalConsoleLog; // Restore console.log
 
 async function main() {
   const apiKey = process.env.COMPANIES_HOUSE_API_KEY;
   
   if (!apiKey) {
-    console.error('COMPANIES_HOUSE_API_KEY environment variable is required');
+    process.stderr.write('COMPANIES_HOUSE_API_KEY environment variable is required\n');
     process.exit(1);
   }
 
@@ -16,6 +20,6 @@ async function main() {
 }
 
 main().catch((error) => {
-  console.error('Server failed to start:', error);
+  process.stderr.write(`Server failed to start: ${error}\n`);
   process.exit(1);
 });
