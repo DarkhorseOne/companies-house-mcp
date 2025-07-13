@@ -5,6 +5,11 @@ const readline = require('readline');
 
 // Configuration
 const SERVER_URL = process.env.MCP_HTTP_SERVER_URL || 'http://localhost:3000';
+const RECONNECT_DELAY = parseInt(process.env.MCP_RECONNECT_DELAY || '2000');
+const MAX_RETRY_ATTEMPTS = parseInt(process.env.MCP_MAX_RETRY_ATTEMPTS || '3');
+
+// Connection state
+let retryCount = 0;
 
 // Create readline interface for stdin/stdout communication
 const rl = readline.createInterface({
@@ -17,7 +22,7 @@ const rl = readline.createInterface({
 // HTTP client
 const httpClient = axios.create({
   baseURL: SERVER_URL,
-  timeout: 5000, // Shorter timeout for testing
+  timeout: 5000,
   headers: {
     'Content-Type': 'application/json',
   }
@@ -36,6 +41,36 @@ function sendError(id, message, code = -32603) {
   console.log(JSON.stringify(errorResponse));
 }
 
+// Simple HTTP request with retry
+async function makeHttpRequest(method, url, data = null) {
+  for (let attempt = 0; attempt <= MAX_RETRY_ATTEMPTS; attempt++) {
+    try {
+      let response;
+      if (method === 'GET') {
+        response = await httpClient.get(url);
+      } else if (method === 'POST') {
+        response = await httpClient.post(url, data);
+      } else {
+        throw new Error(`Unsupported HTTP method: ${method}`);
+      }
+      
+      // Reset retry count on success
+      retryCount = 0;
+      return response;
+    } catch (error) {
+      process.stderr.write(`HTTP request attempt ${attempt + 1} failed: ${error.message}\n`);
+      
+      if (attempt < MAX_RETRY_ATTEMPTS) {
+        const delay = RECONNECT_DELAY * Math.pow(2, attempt);
+        process.stderr.write(`Retrying in ${delay}ms...\n`);
+        await new Promise(resolve => setTimeout(resolve, delay));
+      } else {
+        throw new Error(`Request failed after ${MAX_RETRY_ATTEMPTS + 1} attempts: ${error.message}`);
+      }
+    }
+  }
+}
+
 // Process a single MCP request
 async function processRequest(data) {
   process.stderr.write(`Processing: ${data}\n`);
@@ -51,7 +86,27 @@ async function processRequest(data) {
 
   const { id, method, params } = request;
 
+  // Check if this is a notification (no id field)
+  const isNotification = !('id' in request);
+
   try {
+    // Handle notifications (no response required)
+    if (isNotification) {
+      switch (method) {
+        case 'notifications/initialized':
+          process.stderr.write('Received initialized notification\n');
+          break;
+        case 'notifications/cancelled':
+          process.stderr.write(`Request cancelled: ${JSON.stringify(params)}\n`);
+          break;
+        default:
+          process.stderr.write(`Received notification: ${method}\n`);
+          break;
+      }
+      return; // Don't send a response for notifications
+    }
+
+    // Handle requests (response required)
     switch (method) {
       case 'initialize':
         // Respond immediately to initialization
@@ -69,15 +124,11 @@ async function processRequest(data) {
         }));
         break;
 
-      case 'notifications/initialized':
-        // No response needed for notifications
-        break;
-
       case 'tools/list':
         try {
           process.stderr.write('Making HTTP request to /tools\n');
-          const response = await httpClient.get('/tools');
-          process.stderr.write(`Got response: ${JSON.stringify(response.data)}\n`);
+          const response = await makeHttpRequest('GET', '/tools');
+          process.stderr.write(`Got response with ${response.data.tools?.length || 0} tools\n`);
           console.log(JSON.stringify({
             jsonrpc: '2.0',
             id,
@@ -93,7 +144,7 @@ async function processRequest(data) {
       case 'tools/call':
         try {
           const { name, arguments: args } = params;
-          const response = await httpClient.post(`/mcp/tools/${name}`, args);
+          const response = await makeHttpRequest('POST', `/mcp/tools/${name}`, args);
           console.log(JSON.stringify({
             jsonrpc: '2.0',
             id,
@@ -102,6 +153,20 @@ async function processRequest(data) {
         } catch (error) {
           sendError(id, `Tool execution failed: ${error.message}`);
         }
+        break;
+
+      case 'bridge/status':
+        // Get connection status
+        console.log(JSON.stringify({
+          jsonrpc: '2.0',
+          id,
+          result: {
+            server_url: SERVER_URL,
+            retry_count: retryCount,
+            max_retries: MAX_RETRY_ATTEMPTS,
+            reconnect_delay: RECONNECT_DELAY
+          }
+        }));
         break;
 
       default:
@@ -114,7 +179,7 @@ async function processRequest(data) {
 }
 
 // Main execution
-function main() {
+async function main() {
   process.stderr.write('Bridge starting...\n');
 
   // Process requests line by line
@@ -128,7 +193,6 @@ function main() {
   // Handle graceful shutdown
   rl.on('close', () => {
     process.stderr.write('Bridge shutting down\n');
-    // Don't exit immediately, let pending requests finish
     setTimeout(() => process.exit(0), 100);
   });
   
@@ -143,12 +207,14 @@ function main() {
   });
   
   process.stderr.write('Bridge ready for MCP requests\n');
+  process.stderr.write(`Configuration:\n`);
+  process.stderr.write(`  Server URL: ${SERVER_URL}\n`);
+  process.stderr.write(`  Max retry attempts: ${MAX_RETRY_ATTEMPTS}\n`);
+  process.stderr.write(`  Reconnect delay: ${RECONNECT_DELAY}ms\n`);
 }
 
 // Start the bridge
-try {
-  main();
-} catch (error) {
+main().catch(error => {
   process.stderr.write(`Bridge failed: ${error.message}\n`);
   process.exit(1);
-}
+});

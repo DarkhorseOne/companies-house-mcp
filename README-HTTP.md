@@ -6,8 +6,8 @@ This implementation provides HTTP access to the Companies House MCP server, enab
 
 The HTTP bridge consists of two main components:
 
-1. **HTTP Server** (`src/http-server.ts`) - Fastify-based HTTP server that exposes MCP tools as REST endpoints
-2. **HTTP Bridge Client** (`simple-http-bridge.js`) - Client-side bridge that translates MCP protocol to HTTP calls
+1. **HTTP Server** (`src/http-server.ts`) - Fastify-based HTTP server that exposes MCP tools as REST endpoints (requires `COMPANIES_HOUSE_API_KEY`)
+2. **HTTP Bridge Client** (`simple-http-bridge.js`) - Client-side bridge that translates MCP protocol to HTTP calls (no API key needed)
 
 ## Features
 
@@ -17,6 +17,8 @@ The HTTP bridge consists of two main components:
   - MCP-compatible endpoints (`/mcp/...`)
   - Bridge endpoint for stdio compatibility (`/mcp/bridge`)
 - **Health checks and monitoring**
+- **Auto-reconnection with exponential backoff**
+- **Manual reconnection support**
 - **Graceful shutdown handling**
 - **TypeScript support with proper typing**
 
@@ -31,13 +33,16 @@ npm install
 ### 2. Set Environment Variables
 
 ```bash
-# Required
+# Required for HTTP Server
 COMPANIES_HOUSE_API_KEY=your_api_key_here
 
-# Optional
+# Optional for HTTP Server
 PORT=3000
 HOST=0.0.0.0
 NODE_ENV=development
+
+# Optional for Bridge Client
+MCP_HTTP_SERVER_URL=http://localhost:3000
 ```
 
 ### 3. Build and Start HTTP Server
@@ -113,13 +118,14 @@ curl http://localhost:3000/tools
       "command": "node",
       "args": ["/absolute/path/to/companies-house-mcp/simple-http-bridge.js"],
       "env": {
-        "COMPANIES_HOUSE_API_KEY": "your_api_key_here",
         "MCP_HTTP_SERVER_URL": "http://localhost:3000"
       }
     }
   }
 }
 ```
+
+**Note:** The bridge client does NOT need the `COMPANIES_HOUSE_API_KEY` - only the HTTP server needs it.
 
 4. **Test the Bridge:**
 ```bash
@@ -145,7 +151,6 @@ npm run start:http
       "command": "node",
       "args": ["/absolute/path/to/companies-house-mcp/simple-http-bridge.js"],
       "env": {
-        "COMPANIES_HOUSE_API_KEY": "your_api_key_here",
         "MCP_HTTP_SERVER_URL": "https://your-server.com:3000"
       }
     }
@@ -213,7 +218,6 @@ For connecting to a local HTTP server:
       "command": "node",
       "args": ["/absolute/path/to/companies-house-mcp/simple-http-bridge.js"],
       "env": {
-        "COMPANIES_HOUSE_API_KEY": "your_api_key_here",
         "MCP_HTTP_SERVER_URL": "http://localhost:3000"
       }
     }
@@ -232,7 +236,6 @@ For connecting to a remote cloud server:
       "command": "node",
       "args": ["/absolute/path/to/companies-house-mcp/simple-http-bridge.js"],
       "env": {
-        "COMPANIES_HOUSE_API_KEY": "your_api_key_here",
         "MCP_HTTP_SERVER_URL": "https://your-server.com:3000"
       }
     }
@@ -258,6 +261,8 @@ For connecting to a remote cloud server:
 | `NODE_ENV` | development | Node environment |
 | `MCP_HTTP_SERVER_URL` | http://localhost:3000 | Bridge target URL |
 | `MCP_HTTP_TIMEOUT` | 5000 | HTTP request timeout (ms) |
+| `MCP_RECONNECT_DELAY` | 2000 | Initial reconnect delay (ms) |
+| `MCP_MAX_RETRY_ATTEMPTS` | 3 | Maximum retry attempts per request |
 
 ## Monitoring and Logging
 
@@ -301,6 +306,43 @@ curl http://localhost:3000/health
 
 # Check if tools are accessible
 curl http://localhost:3000/tools
+```
+
+### Manual Reconnection
+
+The bridge supports manual reconnection and status checking:
+
+```bash
+# Check connection status
+echo '{"jsonrpc":"2.0","id":1,"method":"bridge/status","params":{}}' | node simple-http-bridge.js
+```
+
+### Auto-Reconnection Features
+
+The bridge automatically handles connection issues:
+
+- **Request-Level Retry**: Automatically retries failed HTTP requests with exponential backoff
+- **Exponential Backoff**: Retry delays increase with each attempt (2s, 4s, 8s, up to max)
+- **Configurable Retry Limit**: Default 3 attempts, configurable via environment variables
+- **Proper Notification Handling**: Correctly processes MCP notifications without sending responses
+- **Robust Error Handling**: Graceful degradation when server is unavailable
+
+Configure reconnection behavior:
+
+```json
+{
+  "mcpServers": {
+    "companies-house-http": {
+      "command": "node",
+      "args": ["/path/to/simple-http-bridge.js"],
+      "env": {
+        "MCP_HTTP_SERVER_URL": "http://localhost:3000",
+        "MCP_RECONNECT_DELAY": "3000",
+        "MCP_MAX_RETRY_ATTEMPTS": "5"
+      }
+    }
+  }
+}
 ```
 
 ## Performance
