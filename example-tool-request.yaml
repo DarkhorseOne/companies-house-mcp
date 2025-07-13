@@ -1,0 +1,10 @@
+# Example Tool Request: Company Charges
+tool_name: "get_company_charges"
+api_endpoint: "/company/{company_number}/charges"
+api_docs_url: "https://developer.company-information.service.gov.uk/api/docs/company/charges/charges.html"
+description: "Get company charges (secured debts, mortgages, debentures)"
+parameters:
+  required:
+    - company_number: "Company number (8 digits)"
+  optional:
+    - items_per_page: "Number of charges to return (default: 25)"
