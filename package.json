@@ -1,7 +1,7 @@
 {
   "name": "companies-house-mcp",
   "version": "1.0.0",
-  "description": "",
+  "description": "Companies House API MCP Server",
   "main": "index.js",
   "scripts": {
     "build": "tsc",
@@ -12,9 +12,9 @@
     "type-check": "tsc --noEmit",
     "bridge": "node simple-http-bridge.js"
   },
-  "keywords": [],
-  "author": "",
-  "license": "ISC",
+  "keywords": ["mcp", "companies-house", "mcp-server"],
+  "author": "DarkhorseOne Ltd",
+  "license": "MIT",
   "type": "commonjs",
   "dependencies": {
     "@fastify/cors": "^11.0.1",
