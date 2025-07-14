@@ -1,6 +1,5 @@
-version: '3.8'
-
 services:
+  # MCP Server in stdio mode (default)
   companies-house-mcp:
     build: .
     container_name: companies-house-mcp
@@ -8,6 +7,7 @@ services:
       - COMPANIES_HOUSE_API_KEY=${COMPANIES_HOUSE_API_KEY}
       - COMPANIES_HOUSE_BASE_URL=https://api.company-information.service.gov.uk
       - NODE_ENV=production
+      - MCP_MODE=stdio
     volumes:
       # Mount logs directory if needed
       - ./logs:/app/logs
@@ -17,6 +17,27 @@ services:
     # For MCP stdio communication
     networks:
       - mcp-network
+
+  # MCP Server in HTTP mode
+  companies-house-mcp-http:
+    build: .
+    container_name: companies-house-mcp-http
+    environment:
+      - COMPANIES_HOUSE_API_KEY=${COMPANIES_HOUSE_API_KEY}
+      - COMPANIES_HOUSE_BASE_URL=https://api.company-information.service.gov.uk
+      - NODE_ENV=production
+      - MCP_MODE=http
+      - PORT=${MCP_HTTP_PORT:-3000}
+    ports:
+      - "${MCP_HTTP_PORT:-3000}:${MCP_HTTP_PORT:-3000}"
+    volumes:
+      # Mount logs directory if needed
+      - ./logs:/app/logs
+    restart: unless-stopped
+    networks:
+      - mcp-network
+    profiles:
+      - http
 
 networks:
   mcp-network:
