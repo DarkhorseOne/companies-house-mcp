@@ -1,0 +1,21 @@
+{
+  "mcpServers": {
+    "companies-house-streaming": {
+      "command": "node",
+      "args": ["streaming-http-bridge.js"],
+      "env": {
+        "MCP_STREAMING_SERVER_URL": "http://localhost:3000/stream",
+        "MCP_API_SERVER_URL": "http://localhost:3000/api",
+        "COMPANIES_HOUSE_API_KEY": "your-api-key-here"
+      }
+    },
+    "companies-house-standard": {
+      "command": "node", 
+      "args": ["simple-http-bridge.js"],
+      "env": {
+        "MCP_HTTP_SERVER_URL": "http://localhost:3000",
+        "COMPANIES_HOUSE_API_KEY": "your-api-key-here"
+      }
+    }
+  }
+}

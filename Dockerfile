@@ -45,8 +45,8 @@ USER mcp
 HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
   CMD node -e "console.log('Health check passed')" || exit 1
 
-# Default to stdio mode, but allow HTTP mode via environment variable
+# Default to stdio mode, but allow HTTP and streamable modes via environment variable
 ENV MCP_MODE=stdio
 
 # Start the application based on mode
-CMD ["sh", "-c", "if [ \"$MCP_MODE\" = \"http\" ]; then node dist/http-index.js; else node dist/index.js; fi"]
+CMD ["sh", "-c", "case \"$MCP_MODE\" in \"http\") node dist/http-index.js;; \"streamable\") node dist/streamable-http-index.js;; *) node dist/index.js;; esac"]

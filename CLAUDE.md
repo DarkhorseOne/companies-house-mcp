@@ -10,14 +10,25 @@ This is a Model Context Protocol (MCP) server that provides AI assistants with a
 
 ```bash
 # Development
-npm run dev          # Start development server with hot reload
-npm run build        # Compile TypeScript to JavaScript
-npm run start        # Start production server
-npm run type-check   # Run TypeScript type checking without compilation
+npm run dev              # Start development server with hot reload (stdio)
+npm run dev:http         # Start HTTP development server
+npm run dev:streamable   # Start Streamable HTTP development server
+npm run build            # Compile TypeScript to JavaScript
+npm run start            # Start production server (stdio)
+npm run start:http       # Start HTTP production server
+npm run start:streamable # Start Streamable HTTP production server
+npm run type-check       # Run TypeScript type checking without compilation
+
+# Bridges
+npm run bridge           # Start HTTP bridge for MCP stdio transport
+npm run streaming-bridge # Start streaming bridge (deprecated)
 
 # Docker
 docker build -t companies-house-mcp .
-docker-compose up    # Start with Docker Compose
+docker-compose up                                    # Start stdio mode
+docker-compose --profile http up                    # Start HTTP mode
+docker-compose --profile streamable up              # Start streamable HTTP mode
+./test-docker.sh                                     # Test Docker configuration
 ```
 
 ## Architecture
@@ -26,11 +37,21 @@ The codebase follows a layered architecture:
 
 ### Core Components
 
-- **`src/index.ts`**: Entry point that loads environment variables and starts the MCP server
+- **`src/index.ts`**: Entry point for stdio mode MCP server
+- **`src/http-index.ts`**: Entry point for HTTP mode server
+- **`src/streamable-http-index.ts`**: Entry point for Streamable HTTP mode server
 - **`src/server.ts`**: Main MCP server implementation (`CompaniesHouseMCPServer` class)
   - Handles MCP protocol communication via stdio transport
   - Registers and dispatches tool calls
   - Implements 4 main tools: search_companies, get_company_profile, get_company_officers, get_company_filings
+- **`src/http-server.ts`**: HTTP server implementation (`CompaniesHouseHTTPServer` class)
+  - Provides REST API endpoints and MCP bridge functionality
+  - Supports both regular HTTP endpoints and streaming via Server-Sent Events
+  - Includes health checks and tool listing endpoints
+- **`src/streamable-http-server.ts`**: Streamable HTTP server implementation (`CompaniesHouseStreamableHTTPServer` class)
+  - Implements MCP Streamable HTTP Transport specification
+  - Uses JSON-RPC over HTTP for MCP protocol communication
+  - Fully compliant with MCP transport layer standards
 - **`src/services/companies-house.ts`**: API client service (`CompaniesHouseService` class)
   - Handles HTTP requests to Companies House API
   - Implements authentication using API key as username with empty password

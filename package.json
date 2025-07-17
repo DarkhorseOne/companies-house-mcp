@@ -7,12 +7,19 @@
     "build": "tsc",
     "start": "node dist/index.js",
     "start:http": "node dist/http-index.js",
+    "start:streamable": "node dist/streamable-http-index.js",
     "dev": "nodemon --exec ts-node src/index.ts",
     "dev:http": "nodemon --exec ts-node src/http-index.ts",
+    "dev:streamable": "nodemon --exec ts-node src/streamable-http-index.ts",
     "type-check": "tsc --noEmit",
-    "bridge": "node simple-http-bridge.js"
+    "bridge": "node simple-http-bridge.js",
+    "streamable-bridge": "node streamable-http-bridge.js"
   },
-  "keywords": ["mcp", "companies-house", "mcp-server"],
+  "keywords": [
+    "mcp",
+    "companies-house",
+    "mcp-server"
+  ],
   "author": "DarkhorseOne Ltd",
   "license": "MIT",
   "type": "commonjs",
@@ -22,6 +29,7 @@
     "@modelcontextprotocol/sdk": "^1.15.1",
     "axios": "^1.10.0",
     "dotenv": "^17.2.0",
+    "eventsource": "^4.0.0",
     "fastify": "^5.4.0"
   },
   "devDependencies": {

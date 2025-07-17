@@ -2,7 +2,15 @@
   "permissions": {
     "allow": [
       "Bash(npm run type-check:*)",
-      "Bash(npm run build:*)"
+      "Bash(npm run build:*)",
+      "Bash(npm run dev:http:*)",
+      "Bash(curl:*)",
+      "Bash(pkill:*)",
+      "Bash(true)",
+      "Bash(npm install:*)",
+      "Bash(./mcp-http-control.sh:*)",
+      "Bash(chmod:*)",
+      "Bash(./test-streamable-bridge.sh:*)"
     ],
     "deny": []
   }
